@@ -1,0 +1,112 @@
+ #Terraform configuration that creates the resources you requested
+
+Here's a Terraform configuration that creates the resources you requested:
+
+hcl
+# Configure the Google Cloud provider
+provider "google" {
+  project = "arnold-project-id"
+  region  = "us-east1"
+}
+
+# Create a Google Cloud project (optional, only if not existing)
+resource "google_project" "my_project" {
+  name       = "My Project"
+  project_id = "arnold-project-id"
+}
+
+# Create a Cloud SQL instance (MySQL)
+resource "google_sql_database_instance" "mysql_instance" {
+  name             = "my-mysql-instance"
+  database_version = "MYSQL_8_0"
+  region           = "us-east1"
+
+  settings {
+    tier = "db-f1-micro"
+  }
+}
+
+# Create a Cloud Storage bucket for static files
+resource "google_storage_bucket" "static_files" {
+  name     = "my-static-files-bucket"
+  location = "us-central1"
+}
+
+# Build a Docker image for the PHP-FPM application
+resource "google_cloud_run_service" "php_app" {
+  name     = "my-php-app"
+  location = "us-central1"
+
+  template {
+    spec {
+      containers {
+        image = "gcr.io/your-project-id/php-app:latest"
+      }
+    }
+  }
+
+  traffic {
+    percent         = 100
+    latest_revision = true
+  }
+}
+
+# Create a Dockerfile for the PHP-FPM application
+resource "null_resource" "php_app_dockerfile" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      cat > Dockerfile <<EOF
+      FROM php:7.4-fpm
+      COPY index.php /var/www/html/
+      CMD ["php-fpm"]
+EOF
+    }
+  }
+}
+
+# Create an Nginx configuration for serving static files and proxying requests to the PHP-FPM container
+resource "null_resource" "nginx_config" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      cat > default.conf <<EOF
+      server {
+        listen 80;
+        root /var/www/html;
+
+        location / {
+          try_files \$uri \$uri/ /index.php?\$query_string;
+        }
+
+        location ~ \.php$ {
+          fastcgi_pass 127.0.0.1:9000;
+          fastcgi_index index.php;
+          fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+          include fastcgi_params;
+        }
+      }
+EOF
+    }
+  }
+}
+
+# Create a Cloud Load Balancing (HTTP(S)) to route traffic to the Cloud Run service
+resource "google_compute_global_address" "static_ip" {
+  name = "my-static-ip"
+}
+
+resource "google_compute_url_map" "url_map" {
+  name            = "my-url-map"
+  default_service = google_cloud_run_service.php_app.status[0].url
+}
+
+resource "google_compute_target_http_proxy" "http_proxy" {
+  name     = "my-http-proxy"
+  url_map  = google_compute_url_map.url_map.self_link
+}
+
+resource "google_compute_global_forwarding_rule" "http_forwarding_rule" {
+  name       = "my-http-forwarding-rule"
+  target     = google_compute_target_http_proxy.http_proxy.self_link
+  ip_address = google_compute_global_address.static_ip.address
+  port_range = "80"
+}
