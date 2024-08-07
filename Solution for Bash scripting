@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Script to retrieve the public IP address of a deployed Cloud Run service
+# Accepts an optional environment name as an argument
+
+# Set the environment variables based on the provided argument
+if [ -n "$1" ]; then
+  ENV="$1"
+else
+  ENV="dev"
+fi
+
+# Set the project and service name based on the environment
+case "$ENV" in
+  "dev")
+    PROJECT_ID="my-dev-project"
+    SERVICE_NAME="my-dev-service"
+    ;;
+  "staging")
+    PROJECT_ID="my-staging-project"
+    SERVICE_NAME="my-staging-service"
+    ;;
+  "prod")
+    PROJECT_ID="my-prod-project"
+    SERVICE_NAME="my-prod-service"
+    ;;
+  *)
+    echo "Error: Invalid environment provided. Please use 'dev', 'staging', or 'prod'."
+    exit 1
+    ;;
+esac
+
+# Retrieve the public IP address of the Cloud Run service
+PUBLIC_IP=$(gcloud run services list --project=$PROJECT_ID --format="value(status.url)" --filter="metadata.name=$SERVICE_NAME" 2>/dev/null)
+
+# Check if the public IP address was successfully retrieved
+if [ -n "$PUBLIC_IP" ]; then
+  echo "The public IP address of the $SERVICE_NAME service in the $ENV environment is: $PUBLIC_IP"
+  # Log the successful execution
+  echo "$(date) - Successfully retrieved the public IP address for the $SERVICE_NAME service in the $ENV environment." >> cloud_run_ip_script.log
+else
+  echo "Error: Failed to retrieve the public IP address for the $SERVICE_NAME service in the $ENV environment."
+  # Log the error
+  echo "$(date) - Error: Failed to retrieve the public IP address for the $SERVICE_NAME service in the $ENV environment." >> cloud_run_ip_script.log
+  exit 1
+fi
